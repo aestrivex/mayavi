@@ -436,7 +436,7 @@ class LUTManager(Base):
                     lut_list = parse_lut_file(file_name)
                 except IOError, err_msg:
                     msg = "Sorry could not parse LUT file: %s\n"%file_name
-                    msg += err_msg
+                    msg += err_msg.message
                     error(msg)
                 else:
                     if self.reverse_lut:
