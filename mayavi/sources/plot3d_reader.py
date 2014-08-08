@@ -63,7 +63,7 @@ class PLOT3DReader(Source):
                          desc='vector data attribute to show')
 
     # The VTK data file reader.
-    reader = Instance(tvtk.PLOT3DReader, args=(), allow_none=False,
+    reader = Instance(tvtk.MultiBlockPLOT3DReader, args=(), allow_none=False,
                       record=True)
 
     # Information about what this object can produce.
@@ -164,6 +164,13 @@ class PLOT3DReader(Source):
         self.reader.update()
         self.render()
 
+    def has_output_port(self):
+        """ Return True as the reader has output port."""
+        return True
+
+    def get_output_object(self):
+        """ Return the reader output port."""
+        return self.reader.output_port
 
     ######################################################################
     # Non-public interface
@@ -235,12 +242,12 @@ class PLOT3DReader(Source):
         # Now setup the outputs by resetting self.outputs.  Changing
         # the outputs automatically fires a pipeline_changed event.
         try:
-            n = r.number_of_output_ports
+            n = r.get_output().number_of_blocks
         except AttributeError: # for VTK >= 4.5
             n = r.number_of_outputs
         outputs = []
         for i in range(n):
-            outputs.append(r.get_output(i))
+            outputs.append(r.get_output().get_block(i))
 
         self.outputs = outputs
 

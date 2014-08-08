@@ -22,6 +22,8 @@ import vtk
 
 # This is a little expensive to create so we cache it.
 _cache = vtk_parser.VTKMethodParser()
+vtk_major_version = vtk.vtkVersion.GetVTKMajorVersion()
+vtk_minor_version = vtk.vtkVersion.GetVTKMinorVersion()
 
 class TestVTKParser(unittest.TestCase):
     def setUp(self):
@@ -43,9 +45,17 @@ class TestVTKParser(unittest.TestCase):
         p.parse(vtk.vtkObject())
         self.assertEqual(p.get_toggle_methods(),
                          {'Debug': 0, 'GlobalWarningDisplay': 1})
-        self.assertEqual(p.get_state_methods(), {})
-        self.assertEqual(p.get_get_set_methods(), {'ReferenceCount': (1, None)})
-        self.assertEqual(p.get_get_methods(), ['GetMTime'])
+        if (vtk_major_version >= 5 and vtk_minor_version >= 10) or \
+           (vtk_major_version >= 6):
+            self.assertEqual(p.get_state_methods(), {})
+            self.assertEqual(p.get_get_methods(), ['GetCommand', 'GetMTime'])
+        elif vtk_major_version >= 5 and vtk_minor_version >= 6:
+            self.assertEqual(p.get_state_methods(), {})
+            self.assertEqual(p.get_get_methods(), ['GetMTime'])
+        else:
+            self.assertEqual(p.get_state_methods(), {'ReferenceCount':(1, None)})
+            self.assertEqual(p.get_get_methods(), ['GetMTime'])
+        self.assertEqual(p.get_get_set_methods(), {})
 
         res = ['AddObserver', 'BreakOnError', 'HasObserver',
                'InvokeEvent', 'IsA', 'Modified', 'NewInstance',
@@ -92,6 +102,8 @@ class TestVTKParser(unittest.TestCase):
                'Specular': (0.0, (0.0, 1.0)),
                'SpecularColor': ((1.0, 1.0, 1.0), None),
                'SpecularPower': (1.0, (0.0, 100.0))}
+        if ('ReferenceCount' not in p.get_get_set_methods()):
+            del res['ReferenceCount']
         result = p.get_get_set_methods().keys()
         if hasattr(obj, 'GetTexture'):
             result.remove('Texture')
@@ -111,7 +123,10 @@ class TestVTKParser(unittest.TestCase):
             expect = ['GetMaterial', 'GetMaterialName',
                       'GetNumberOfTextures', 'GetShaderProgram']
             if hasattr(obj, 'GetMaterialName'):
-                self.assertEqual(p.get_get_methods(), expect)
+                if hasattr(obj, 'GetShaderDeviceAdapter2'):
+                    expect.append('GetShaderDeviceAdapter2')
+                msg = "%s not in %s"%(p.get_get_methods(), expect)
+                self.assertTrue(all([x in expect for x in sorted(p.get_get_methods())]), msg)
             else:
                 expect.remove('GetMaterialName')
                 self.assertEqual(p.get_get_methods(), expect)
@@ -121,10 +136,15 @@ class TestVTKParser(unittest.TestCase):
 
         res = ['BackfaceRender', 'DeepCopy', 'Render']
         if hasattr(obj, 'GetTexture'):
-            res = ['AddShaderVariable', 'BackfaceRender', 'DeepCopy',
-                   'LoadMaterial', 'LoadMaterialFromString',
-                   'ReleaseGraphicsResources', 'RemoveAllTextures', 'RemoveTexture',
-                   'Render']
+            if vtk_major_version == 6 and vtk_minor_version == 1:
+                res = ['AddShaderVariable', 'BackfaceRender', 'DeepCopy',
+                       'ReleaseGraphicsResources', 'RemoveAllTextures', 'RemoveTexture',
+                       'Render']
+            else:
+                res = ['AddShaderVariable', 'BackfaceRender', 'DeepCopy',
+                       'LoadMaterial', 'LoadMaterialFromString',
+                       'ReleaseGraphicsResources', 'RemoveAllTextures', 'RemoveTexture',
+                       'Render']
         if hasattr(obj, 'PostRender'):
             res.append('PostRender')
             res.sort()
@@ -139,6 +159,13 @@ class TestVTKParser(unittest.TestCase):
         self.assertEqual('OutputSpacing' not in state_meths, True)
         self.assertEqual('OutputOrigin' not in state_meths, True)
         self.assertEqual('OutputExtent' not in state_meths, True)
+
+    def test_props_allocated_rendertime_is_not_a_get_set_method(self):
+        p = self.p
+        a = vtk.vtkActor()
+        if hasattr(a, 'GetAllocatedRenderTime'):
+            p.parse(vtk.vtkProp)
+            self.assertFalse('AllocatedRenderTime' in p.get_get_set_methods())
 
     def test_method_signature(self):
         """Check if VTK method signatures are parsed correctly."""
@@ -172,7 +199,10 @@ class TestVTKParser(unittest.TestCase):
 
         # Test vtkObjects args.
         o = vtk.vtkContourFilter()
-        sig = p.get_method_signature(o.SetInput)
+        if vtk_major_version < 6:
+            sig = p.get_method_signature(o.SetInput)
+        else:
+            sig = p.get_method_signature(o.SetInputData)
         if len(sig) == 1:
             self.assertEqual([([None], ['vtkDataSet'])],
                              sig)
@@ -195,15 +225,21 @@ class TestVTKParser(unittest.TestCase):
         self.assertEqual([(['int'], ('int', 'function'))],
                          p.get_method_signature(o.AddObserver))
         # This one's for completeness.
-        self.assertEqual([([None], ['int'])],
-                         p.get_method_signature(o.RemoveObserver))
+        if ((len(p.get_method_signature(o.RemoveObserver))) == 2):
+            self.assertEqual([([None], ['vtkCommand']), ([None], ['int'])],
+                             p.get_method_signature(o.RemoveObserver))
+        else:
+            self.assertEqual([([None], ['int'])],
+                             p.get_method_signature(o.RemoveObserver))
+
 
     def test_special_non_state_methods(self):
         """Check exceptional cases that are not state methods."""
         p = self.p
         p.parse(vtk.vtkDataObject)
         self.assert_('UpdateExtent' not in p.get_state_methods())
-        self.assert_('UpdateExtent' in p.get_get_set_methods())
+        if vtk_major_version < 6:
+            self.assert_('UpdateExtent' in p.get_get_set_methods())
 
         p.parse(vtk.vtkImageImport)
         self.assert_('DataExtent' not in p.get_state_methods())
@@ -233,7 +269,7 @@ class TestVTKParser(unittest.TestCase):
                 for val in values:
                     # No state information is obtainable since no
                     # class tree is created.
-                    self.assertEqual(val[1], None)
+                    self.assertTrue(val[1] in [None, 0, 1, 2])
 
     def test_parse_all(self):
         """Check if all VTK classes are parseable."""

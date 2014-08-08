@@ -374,11 +374,11 @@ flow = document_pipeline(Flow())
 
 
 def test_flow():
-    x, y, z = numpy.mgrid[0:5, 0:5, 0:5]
-    r = numpy.sqrt(x ** 2 + y ** 2 + z ** 4)
+    x, y, z = numpy.mgrid[-4:4:40j, -4:4:40j, 0:4:20j]
+    r = numpy.sqrt(x ** 2 + y ** 2 + z ** 2 + 0.1)
     u = y * numpy.sin(r) / r
     v = -x * numpy.sin(r) / r
-    w = numpy.zeros_like(z)
+    w = numpy.ones_like(z)*0.05
     obj = flow(u, v, w)
     return obj
 
@@ -656,7 +656,10 @@ class Surf(Pipeline):
                         see the `extent` keyword argument.
                         """)
 
-    mask = Array(help="boolean mask array to suppress some data points.")
+    mask = Array(help="""boolean mask array to suppress some data points.
+                 Note: this works based on colormapping of scalars and will
+                 not work if you specify a solid color using the
+                 `color` keyword.""")
 
     def __call_internal__(self, *args, **kwargs):
         """ Override the call to be able to scale automatically the axis.
@@ -802,7 +805,10 @@ class Mesh(Pipeline):
 
     scalars = Array(help="""optional scalar data.""")
 
-    mask = Array(help="boolean mask array to suppress some data points.")
+    mask = Array(help="""boolean mask array to suppress some data points.
+                 Note: this works based on colormapping of scalars and will
+                 not work if you specify a solid color using the
+                 `color` keyword.""")
 
     representation = Trait('surface', 'wireframe', 'points', 'mesh',
                     'fancymesh',
@@ -893,6 +899,45 @@ def test_mesh_sphere_anim(obj=None, r=1.0, npts=(100, 100), colormap='jet'):
         z = (r + i * 0.25) * cos(phi)
         ms.set(z=z, scalars=z)
         yield
+
+def test_mesh_mask_custom_colors(r=1.0, npts=(100, 100)):
+    """Create a sphere with masking and using a custom colormap.
+
+    Note that masking works only when scalars are set.  The custom colormap
+    illustrates how one can completely customize the colors with numpy arrays.
+    In this case we use a simple 2 color colormap.
+    """
+    # Create the data like for test_mesh_sphere.
+    pi = numpy.pi
+    cos = numpy.cos
+    sin = numpy.sin
+    np_phi = npts[0] * 1j
+    np_theta = npts[1] * 1j
+    phi, theta = numpy.mgrid[0:pi:np_phi, 0:2 * pi:np_theta]
+    x = r * sin(phi) * cos(theta)
+    y = r * sin(phi) * sin(theta)
+    z = r * cos(phi)
+
+    # Setup the mask array.
+    mask = numpy.zeros_like(x).astype(bool)
+    mask[::5] = True
+    mask[:,::5] = True
+
+    # Create the mesh with the default colormapping.
+    m = mesh(x, y, z, scalars=z, mask=mask)
+
+    # Setup the colormap. This is an array of (R, G, B, A) values (each in
+    # range 0-255), there should be at least 2 colors in the array.  If you
+    # want a constant color set the two colors to the same value.
+    colors = numpy.zeros((2, 4), dtype='uint8')
+    colors[0,2] = 255
+    colors[1,1] = 255
+    # Set the alpha value to fully visible.
+    colors[:,3] = 255
+
+    # Now setup the lookup table to use these colors.
+    m.module_manager.scalar_lut_manager.lut.table = colors
+    return m
 
 
 def test_fancy_mesh():

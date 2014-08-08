@@ -10,6 +10,7 @@ import numpy as np
 
 from mayavi import mlab
 from mayavi.core.null_engine import NullEngine
+from mayavi.core.engine import Engine
 from tvtk.api import tvtk
 from mayavi.tools.engine_manager import engine_manager
 from mayavi.core.registry import registry
@@ -210,8 +211,31 @@ class TestMlabNullEngineMisc(TestMlabNullEngine):
 ################################################################################
 class TestMlabPipeline(TestMlabNullEngine):
     """ Test the pipeline functions.
+        For vtk versions greater than 5.6 (5.10.1 onwards), widgets need
+        a render window interactor to be set, otherwise an error is raised.
+        As such this test checks for the current VTK version and setups a real
+        engine for vtk > 5.6 and null engine otherwise.
     """
 
+    def setUp(self):
+        ver = tvtk.Version()
+        self.less_than_vtk_5_6 = True
+        if ver.vtk_major_version >= 5 and ver.vtk_minor_version >= 10:
+            self.less_than_vtk_5_6 = False
+        if self.less_than_vtk_5_6:
+            super(TestMlabPipeline, self).setUp()
+        else:
+            e = Engine()
+            e.start()
+            mlab.set_engine(e)
+
+    def tearDown(self):
+        if self.less_than_vtk_5_6:
+            super(TestMlabPipeline, self).setUp()
+        else:            
+            for engine in registry.engines.keys():
+                registry.unregister_engine(engine)
+    
     def test_probe_data(self):
         """ Test probe_data
         """
@@ -222,7 +246,7 @@ class TestMlabPipeline(TestMlabNullEngine):
         r_ = mlab.pipeline.probe_data(iso, x_, y_, z_)
         np.testing.assert_array_almost_equal(r_,
                                              np.sqrt(x_**2 + y_**2 + z_**2),
-                                             decimal=2)
+                                             decimal=1)
         flow = mlab.flow(x, y, z, x, y, z)
         u_, v_, w_ = mlab.pipeline.probe_data(flow, x_, y_, z_,
                                               type='vectors')
@@ -253,6 +277,10 @@ class TestMlabHelperFunctions(TestMlabNullEngine):
         for bar in bar1, bar2, bar3:
             self.assertEqual(bar.glyph.glyph_source.glyph_source.y_length, 0.9)
 
+    def test_imshow(self):
+        s = np.random.random((10, 10))
+        # This should work.
+        obj = mlab.imshow(s)
 
 
 ################################################################################
@@ -346,4 +374,3 @@ class TestMlabModules(TestMlabNullEngine):
 
 if __name__ == '__main__':
     unittest.main()
-

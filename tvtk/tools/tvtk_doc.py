@@ -54,7 +54,7 @@ def get_tvtk_class_names():
     filter = []
     sink = []
     for name in dir(vtk):
-        if name.startswith('vtk'):
+        if name.startswith('vtk') and not name.startswith('vtkQt'):
             klass = getattr(vtk, name)
             try:
                 c = klass()
@@ -366,7 +366,7 @@ class TVTKClassChooser(HasTraits):
             return
 
         f = self.finder
-        result = f.search(value)
+        result = f.search(str(value))
         if len(result) == 0:
             self.available = self._orig_available
         elif len(result) == 1:
@@ -404,4 +404,3 @@ def main():
 
 if __name__ == '__main__':
     main()
-

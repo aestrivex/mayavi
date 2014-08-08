@@ -16,6 +16,7 @@ import new
 
 from traits.api import Trait, CArray, Instance, CFloat, \
     Any, false, true, TraitTuple, Range, Bool, Property, CInt, Enum, Either
+from traits.trait_errors import TraitError
 from tvtk.api import tvtk
 from tvtk.common import camel2enthought
 
@@ -73,10 +74,10 @@ class ModuleFactory(PipeFactory):
     def _line_width_changed(self):
         try:
             self._target.actor.property.line_width = self.line_width
-        except AttributeError:
+        except (AttributeError, TraitError):
             try:
                 self._target.property.line_width = self.line_width
-            except AttributeError:
+            except (AttributeError, TraitError):
                 pass
 
 
@@ -351,7 +352,7 @@ class StreamlineFactory(DataModuleFactory):
         self._target.seed.widget = widget = \
                             self._target.seed.widget_list[self.seedtype_]
 
-        if  not self.seed_scale == 1.:
+        if not self.seed_scale == 1.:
             widget.enabled = True
             if self.seedtype == 'line':
                 p1 = widget.point1

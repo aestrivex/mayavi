@@ -5,6 +5,7 @@
 # License: BSD Style.
 
 # Standard library imports
+import os
 import os.path
 import sys
 import logging
@@ -13,9 +14,8 @@ from optparse import OptionParser
 
 # Enthought library imports
 from traits.etsconfig.api import ETSConfig
-from traits.api import  Bool, Instance
+from traits.api import  Any, Bool, Instance
 from pyface.api import GUI
-from pyface.timer.api import do_later
 from tvtk.api import tvtk
 from mayavi.plugins.app import Mayavi, setup_logger
 
@@ -287,6 +287,18 @@ def compare_image(scene, img_path):
         ren.reset_camera()
         s.render()
 
+def is_running_with_nose():
+    """Returns True if we are being run via nosetests.
+
+    This tests if `nosetests` is used or if we are invoked via
+    `python -m nose.core`.
+    """
+    argv0 = sys.argv[0]
+    nose_core = os.path.join('nose', 'core.py')
+    if argv0.endswith('nosetests') or argv0.endswith(nose_core):
+        return True
+    return False
+
 
 ###########################################################################
 # `TestCase` class.
@@ -304,12 +316,16 @@ class TestCase(Mayavi):
     # `self.compare_image` was called in the test..
     offscreen = Bool(False)
 
-    # Use the standalone mode.
+    # Use the standalone mode. This mode does not use the envisage Mayavi
+    # application.
     standalone = Bool(True)
 
     app_window = Instance('pyface.api.ApplicationWindow')
 
     gui = Instance('pyface.gui.GUI')
+
+    # An exception info if an exception was raised by a test.
+    exception_info = Any
 
     ######################################################################
     # `Mayavi` interface.
@@ -321,7 +337,8 @@ class TestCase(Mayavi):
         if argv is None:
             argv = sys.argv[1:]
 
-        self.parse_command_line(argv)
+        if not is_running_with_nose():
+            self.parse_command_line(argv)
 
         if self.standalone:
             self.run_standalone()
@@ -335,6 +352,9 @@ class TestCase(Mayavi):
             path = os.path.join(ETSConfig.application_data,
                                 'mayavi_e3', 'mayavi-test.log')
             path = os.path.abspath(path)
+            log_path = os.path.dirname(path)
+            if not os.path.exists(log_path):
+                os.makedirs(log_path)
         else:
             path = 'mayavi-test.log'
         setup_logger(logger, path, mode=self.log_mode)
@@ -351,6 +371,7 @@ class TestCase(Mayavi):
             engine = Engine()
         engine.start()
 
+        self.exception_info = None
         self.script = Script(engine=engine)
         self.gui = g = GUI()
         self.app_window = a = ApplicationWindow()
@@ -358,46 +379,51 @@ class TestCase(Mayavi):
         a.show(False)
         g.invoke_later(self.run)
         g.start_event_loop()
+        if self.exception_info is not None:
+            type, value, tb = self.exception_info
+            raise type, value, tb
 
     def run(self):
         """This starts everything up and runs the test.  Call main to
         run the test."""
-
         # Calls the users test code.
         try:
             self.do()
         except Exception, e:
-            # To mimic behavior of unittest.
-            sys.stderr.write('\nfailures=1\n')
             type, value, tb = sys.exc_info()
-            info = traceback.extract_tb(tb)
-            filename, lineno, function, text = info[-1] # last line only
-            exc_msg = "%s\nIn %s:%d\n%s: %s (in %s)" %\
-                      ('Exception', filename, lineno, type.__name__, str(value),
-                       function)
-            sys.stderr.write(exc_msg + '\n')
-            # Log the message.
-            logger.exception(exc_msg)
-            if not self.interact:
-                sys.exit(1)
-
-        if not self.interact:
-            if self.standalone:
-                # Close all existing viewers.
-                e = self.script.engine
-                for scene in e.scenes:
-                    viewer = e.get_viewer(scene)
-                    if viewer is not None:
-                        if self.offscreen:
-                            viewer.scene.close()
-                        else:
-                            viewer.close()
-                GUI.process_events()
-                # Shut down the app and the event loop.
-                self.app_window.close()
-                self.gui.stop_event_loop()
+            if is_running_with_nose():
+                self.exception_info = type, value, tb
             else:
-                self.application.gui.invoke_later(self.application.exit)
+                # To mimic behavior of unittest.
+                sys.stderr.write('\nfailures=1\n')
+                info = traceback.extract_tb(tb)
+                filename, lineno, function, text = info[-1] # last line only
+                exc_msg = "%s\nIn %s:%d\n%s: %s (in %s)" %\
+                        ('Exception', filename, lineno, type.__name__, str(value),
+                        function)
+                sys.stderr.write(exc_msg + '\n')
+                # Log the message.
+                logger.exception(exc_msg)
+                if not self.interact:
+                    sys.exit(1)
+        finally:
+            if not self.interact:
+                if self.standalone:
+                    # Close all existing viewers.
+                    e = self.script.engine
+                    for scene in e.scenes:
+                        viewer = e.get_viewer(scene)
+                        if viewer is not None:
+                            if self.offscreen:
+                                viewer.scene.close()
+                            else:
+                                viewer.close()
+                    GUI.process_events()
+                    # Shut down the app and the event loop.
+                    self.app_window.close()
+                    self.gui.stop_event_loop()
+                else:
+                    self.application.gui.invoke_later(self.application.exit)
 
     def parse_command_line(self, argv):
         """Parse command line options."""
@@ -533,4 +559,3 @@ def test(function):
 
     test = MyTest()
     return test
-

@@ -36,7 +36,6 @@ class TestPlot3dMbReader(unittest.TestCase):
         r.initialize(get_example_data('tiny.xyz'),
                      get_example_data('tiny.q'),
                      configure=False)
-
         e.add_source(r)
         # Add the filter.
         f = SelectOutput()
@@ -94,7 +93,9 @@ class TestPlot3dMbReader(unittest.TestCase):
 
 
     def test_deepcopied(self):
-        """Test if the MayaVi2 visualization can be deep-copied."""
+        """Test if the MayaVi2 visualization can be deep-copied.
+           XXX: The plot 3d reader and multi block version are broken in
+                vtk 5.10.1. This will be fixed in next Mayavi release."""
         ############################################################
         # Copy the reader to see if it does not pop up the UI.
 
